@@ -1,0 +1,241 @@
+---
+title: "HFCE Food Time Series Using Seasonal ARIMA"
+author: "<font size=\"2\"> Christony G. Duyapat ^[Saint Mary's University - School of Graduate Studies, hed-cduyapat@smu.edu.ph]</font>"
+output:
+  html_document:
+    self_contained: yes
+    mode: selfcontained
+---
+
+------------------------------------------------------------------------
+
+The data used in this report were downloaded from [Philippines Statistics Authority](https://psa.gov.ph/statistics/national-accounts/data-series) website accessed on **April 6, 2024**.
+
+### Six Major Steps in Developing a Forecast
+
+1.  Defining the Problem
+
+2.  Gathering and Preprocessing Data
+
+3.  Exploratory Analysis
+
+4.  Choosing and Building Models
+
+5.  Computing Model Performance Metrics and Checking Residuals
+
+6.  Choosing the Best Model and Making Forecast
+
+------------------------------------------------------------------------
+
+#### Step 1: Defining the Problem
+
+Research Questions:
+
+1.  What is the spending pattern of Filipinos on food for the first quarter of 2000 to fourth quarter of 2023?
+
+2.  What is the best ARIMA model in forecasting the Household Final Consumption Expenditure on Food?
+
+3.  What are the forecasted values of the Household Final Consumption Expenditure on Food for the years 2024 to 2025?
+
+------------------------------------------------------------------------
+
+#### Step 2: Gathering and Preprocessing Data
+
+Load the **library packages** to be used in the analysis.
+
+```{r}
+knitr::opts_chunk$set(dev='svg')
+library(forecast)
+library(ggplot2)
+library(caret)
+```
+
+Import the data and transform it into a time series data.
+
+```{r}
+data=read.csv("hfce_food.csv")
+food_ts=ts(data$food,
+           start=c(2000,1), 
+           end=c(2023,4),
+           frequency=4)
+print(food_ts)
+summary(food_ts)
+```
+
+------------------------------------------------------------------------
+
+#### Step 3: Exploratory Analysis
+
+Plot the time series data.
+
+```{r}
+autoplot(food_ts,
+         main='HFCE on Food 2000-2023', 
+         xlab='Quarter',
+         ylab='in million Php')
+```
+
+Time Series Decomposition and Seasonal Plot
+
+```{r}
+autoplot(decompose(food_ts))
+ggseasonplot(food_ts,main="Seasonal Plot",ylab="in million Php")
+```
+
+Research Question 1: What is the spending behavior of Filipinos on food for the first quarter of 2000 to fourth quarter of 2023?
+
+Over the past 24 years, the Household Final Consumption Expenditure (HFCE) on food has exhibited an upward trend with remarkable seasonal patterns. Specifically, there is a spike in spending every second quarter, followed by a decrease in the third quarter. Notably, there is a major increase every fourth quarter which is likely due to increased social gatherings and Christmas-related events that involve higher food consumption. Additionally, the second and fourth-quarter spending spikes may also be partly attributed to the distribution of midyear and Christmas bonuses to employees, respectively.
+
+We can use the Autocorrelation Function and Partial Autocorrelation Function if we want to manually select the model. In my case, I am going to use the automated model selection under the forecast package. Nevertheless, let us show the ACF and PACF for demonstration.
+
+```{r}
+acf(food_ts,lag.max=36)
+pacf(food_ts,lag.max=36)
+```
+
+------------------------------------------------------------------------
+
+#### Step 4: Building and Choosing Models
+
+Automated model selection using auto.arima() function.
+
+```{r}
+auto.arima(food_ts,trace=TRUE,ic="bic",stepwise=FALSE)
+```
+
+Choose top 5 best models using Bayesian Information Criterion (lower the better) and build the ARIMA models.
+
+1.  ARIMA(0,1,1)(0,1,0)[4] : 2030.392
+
+2.  ARIMA(1,1,0)(0,1,0)[4] : 2031.81
+
+3.  ARIMA(1,1,1)(0,1,0)[4] : 2034.512
+
+4.  ARIMA(0,1,1)(1,1,0)[4] : 2034.615
+
+5.  ARIMA(0,1,1)(0,1,1)[4] : 2034.701
+
+```{r}
+model1=arima(food_ts,order=c(0,1,1),seasonal=list(order=c(0,1,0)))
+model2=arima(food_ts,order=c(1,1,0),seasonal=list(order=c(0,1,0)))
+model3=arima(food_ts,order=c(1,1,1),seasonal=list(order=c(0,1,0)))
+model4=arima(food_ts,order=c(0,1,1),seasonal=list(order=c(1,1,0)))
+model5=arima(food_ts,order=c(0,1,1),seasonal=list(order=c(0,1,1)))
+```
+
+Compare the Bayesian Information Criteria and Akaike Information Criteria.
+
+```{r}
+rbind(Model1=data.frame(BIC=BIC(model1),AIC=AIC(model1)),
+      Model2=data.frame(BIC=BIC(model2),AIC=AIC(model2)),
+      Model3=data.frame(BIC=BIC(model3),AIC=AIC(model3)),
+      Model4=data.frame(BIC=BIC(model4),AIC=AIC(model4)),
+      Model5=data.frame(BIC=BIC(model5),AIC=AIC(model5)))
+```
+
+Visualize the top 5 models on top of the actual values
+
+```{r}
+model_fit1=fitted.values(model1)
+model_fit2=fitted.values(model2)
+model_fit3=fitted.values(model3)
+model_fit4=fitted.values(model4)
+model_fit5=fitted.values(model5)
+
+autoplot(food_ts,series="Actual Values",main="Model 1 Fitted Values")+
+  autolayer(model_fit1,series="ARIMA(0,1,1)(0,1,0)[4]")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','aquamarine3'))
+
+autoplot(food_ts,series="Actual Values",main="Model 2 Fitted Values")+
+  autolayer(model_fit2,series="ARIMA(1,1,0)(0,1,0)[4]")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','cadetblue3'))
+
+autoplot(food_ts,series="Actual Values",main="Model 3 Fitted Values")+
+  autolayer(model_fit3,series="ARIMA(1,1,1)(0,1,0)[4]")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','chartreuse2'))
+
+autoplot(food_ts,series="Actual Values",main="Model 4 Fitted Values")+
+  autolayer(model_fit4,series="ARIMA(0,1,1)(1,1,0)[4]")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','darkgoldenrod2'))
+
+autoplot(food_ts,series="Actual Values",main="Model 5 Fitted Values")+
+  autolayer(model_fit5,series="ARIMA(0,1,1)(0,1,1)[4]")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','darkorchid2'))
+```
+
+------------------------------------------------------------------------
+
+#### Step 5: Computing Model Performance Metrics and Checking Residuals
+
+Compute the Performance Metrics of the Models
+
+```{r}
+rbind(
+  Model1_PerfMetrics=data.frame(accuracy(model1),R2=R2(model_fit1,food_ts)),
+  Model2_PerfMetrics=data.frame(accuracy(model2),R2=R2(model_fit2,food_ts)),
+  Model3_PerfMetrics=data.frame(accuracy(model3),R2=R2(model_fit3,food_ts)),
+  Model4_PerfMetrics=data.frame(accuracy(model4),R2=R2(model_fit4,food_ts)),
+  Model5_PerfMetrics=data.frame(accuracy(model5),R2=R2(model_fit5,food_ts))
+  )
+
+```
+
+Check the residuals if they are independently distributed using Ljung-Box Test.
+
+```{r}
+rbind(Model1_Ljung=checkresiduals(model1),
+      Model2_Ljung=checkresiduals(model2),
+      Model3_Ljung=checkresiduals(model3),
+      Model4_Ljung=checkresiduals(model4),
+      Model5_Ljung=checkresiduals(model5)
+      )
+```
+
+The Ljung-Box test shows that only Model 2 (**ARIMA(1,1,0)(0,1,0)[4]**) accepts the null hypothesis at *p-value=0.1623535*. Ljung-Box test is used to show that the residuals are independently distributed which is one of the assumptions of ARIMA.
+
+------------------------------------------------------------------------
+
+#### Step 6: Choosing the Best Model and Making Forecast
+
+Research Question 2: What is the best ARIMA model in forecasting the Household Final Consumption Expenditure on Food?
+
+Upon considering the performance metrics and residuals, Model 2 **ARIMA(1,1,0)(0,1,0)[4]** is evaluated as the best model.
+
+This model is represented by the equation: y~t~ = 𝜙~1~y~t-1~ - 𝜙~1~y~t-5~ - 𝜙~1~y~t-2~ + 𝜙~1~y~t-6~ + y~t-4~ + y~t-1~ - y~t-5~ + 𝜀~t~
+
+```{r}
+summary(model2)
+```
+
+Research Question 3: What are the forecasted values of the Household Final Consumption Expenditure on Food for the years 2024 to 2025?
+
+Make forecast using the best model for the next 8 quarters or in the next 2 years.
+
+```{r}
+forecast=forecast(model2,h=8)
+autoplot(food_ts,series="Actual Values",main="Forecasts from ARIMA(1,1,0)(0,1,0)[4]")+
+  autolayer(forecast,series="Confidence Interval")+
+  autolayer(forecast$mean,series="Forecasted Values")+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','darkorchid4','blue'))
+options(digits=12)
+print(forecast(model2,h=8))
+```
+
