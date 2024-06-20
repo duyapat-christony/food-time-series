@@ -1,0 +1,289 @@
+---
+title: "HFCE Food Time Series Using Seasonal ARIMA and ETS Model"
+author: "<font size=\"2\"> Christony G. Duyapat ^[Saint Mary's University - School
+  of Graduate Studies, hed-cduyapat@smu.edu.ph]</font>"
+output:
+  html_document:
+    self_contained: true
+    mode: selfcontained
+  word_document: default
+---
+
+------------------------------------------------------------------------
+
+The data used in this report were downloaded from [Philippines Statistics Authority](https://psa.gov.ph/statistics/national-accounts/data-series) website accessed on **May 10, 2024**.
+
+## **Seasonal ARIMA**
+
+### Six Major Steps in Developing a Forecast using
+
+1.  Defining the Problem
+
+2.  Gathering and Preprocessing Data
+
+3.  Exploratory Analysis
+
+4.  Building and Choosing Tentative Models
+
+5.  Model Diagnostics
+
+6.  Choosing the Best Model and Making Forecast
+
+------------------------------------------------------------------------
+
+#### Step 1: Defining the Problem
+
+Research Questions:
+
+1.  What is the spending pattern of Filipinos on food for the first quarter of 2000 to fourth quarter of 2023?
+
+2.  What is the best fit model in forecasting the Household Final Consumption Expenditure on Food?
+
+3.  What are the forecasted values of the Household Final Consumption Expenditure on Food for the years 2024 to 2026?
+
+------------------------------------------------------------------------
+
+#### Step 2: Gathering and Preprocessing Data
+
+Load the **library packages** to be used in the analysis.
+
+```{r}
+knitr::opts_chunk$set(dev='svg')
+library(forecast)
+library(ggplot2)
+library(plotly)
+library(caret)
+library(nortest)
+```
+
+Import the data and transform it into a time series data.
+
+```{r}
+data=read.csv("hfce_food.csv")
+food_data=as.numeric(data$food)
+food_ts=ts(data$food,
+           start=c(2000,1), 
+           end=c(2024,1),
+           frequency=4)
+print(food_ts)
+summary(food_ts)
+```
+
+------------------------------------------------------------------------
+
+#### Step 3: Exploratory Analysis
+
+Plot the time series data.
+
+```{r}
+graph1=autoplot(food_ts,
+         main='HFCE on Food 2000 Q1-2024 Q1', 
+         xlab='Quarter',
+         ylab='in million Php',
+         size=0.25)
+ggplotly(graph1)
+```
+
+Time Series Decomposition and Seasonal Plot
+
+```{r}
+ggplotly(autoplot(decompose(food_ts)))
+food_ts_filtered=window(food_ts, end = c(2023, 4))
+graph2=ggseasonplot(food_ts_filtered, year.labels=TRUE, main="Seasonal Plot",ylab="in million Php", continuous = TRUE)
+ggplotly(graph2)
+```
+
+Research Question 1: What is the spending behavior of Filipinos on food for the first quarter of 2000 to fourth quarter of 2023?
+
+Over the past 24 years, the Household Final Consumption Expenditure (HFCE) on food has exhibited an upward trend with remarkable seasonal patterns. Specifically, there is a spike in spending every second quarter, followed by a decrease in the third quarter. Notably, there is a major increase every fourth quarter which is likely due to increased social gatherings and Christmas-related events that involve higher food consumption. Additionally, the second and fourth-quarter spending spikes may also be partly attributed to the distribution of midyear and Christmas bonuses to employees, respectively.
+
+We can use the Autocorrelation Function and Partial Autocorrelation Function if we want to manually select the model. In my case, I am going to use the automated model selection under the forecast package. Nevertheless, let us show the ACF and PACF for demonstration.
+
+```{r}
+acf(food_ts,lag.max=36)
+pacf(food_ts,lag.max=36)
+```
+
+------------------------------------------------------------------------
+
+#### Step 4: Building and Choosing Tentative Models
+
+Set the training set and test set.
+
+```{r}
+train_length=floor(0.8*length(food_ts))
+train_data=food_ts[1:train_length]
+test_data =food_ts[(train_length + 1):length(food_ts)]
+food_train=ts(train_data,
+           start=c(2000,1), 
+           end=c(2019,1),
+           frequency=4)
+food_test=ts(test_data,
+           start=c(2019,2), 
+           end=c(2024,1),
+           frequency=4)
+```
+
+Automated model selection using auto.arima() function.
+
+```{r}
+auto.arima(food_train,trace=TRUE,ic="bic")
+```
+
+Choose top 5 best models using Bayesian Information Criterion (lower the better) and build the ARIMA models.
+
+1.  ARIMA(1,1,1)(0,1,0)[4] 1567.132
+
+2.  ARIMA(0,1,2)(0,1,0)[4] 1568.104
+
+3.  ARIMA(0,1,1)(0,1,0)[4] 1568.198
+
+4.  ARIMA(1,1,0)(0,1,0)[4] 1568.29
+
+5.  ARIMA(2,1,0)(0,1,0)[4] 1568.534
+
+```{r}
+model1=arima(food_train,order=c(1,1,1),seasonal=list(order=c(0,1,0)))
+model2=arima(food_train,order=c(0,1,2),seasonal=list(order=c(0,1,0)))
+model3=arima(food_train,order=c(0,1,1),seasonal=list(order=c(0,1,0)))
+model4=arima(food_train,order=c(1,1,0),seasonal=list(order=c(0,1,0)))
+model5=arima(food_train,order=c(2,1,0),seasonal=list(order=c(0,1,0)))
+```
+
+Compare the Bayesian Information Criteria and Akaike Information Criteria.
+
+```{r}
+rbind(Model1=data.frame(BIC=BIC(model1),AIC=AIC(model1)),
+      Model2=data.frame(BIC=BIC(model2),AIC=AIC(model2)),
+      Model3=data.frame(BIC=BIC(model3),AIC=AIC(model3)),
+      Model4=data.frame(BIC=BIC(model4),AIC=AIC(model4)),
+      Model5=data.frame(BIC=BIC(model5),AIC=AIC(model5)))
+```
+
+------------------------------------------------------------------------
+
+#### Step 5: Model Diagnostics
+
+Check the residuals of the training set using Ljung-Box Test to test autocorrelation and Lilliefors Test to test for normality.
+
+```{r}
+rbind(
+  checkresiduals(model1),
+  checkresiduals(model2),
+  checkresiduals(model3),
+  checkresiduals(model4),
+  checkresiduals(model5)
+)
+
+rbind(
+  lillie.test(residuals(model1)),
+  lillie.test(residuals(model2)),
+  lillie.test(residuals(model3)),
+  lillie.test(residuals(model4)),
+  lillie.test(residuals(model5))
+)
+```
+
+Model 3 will be eliminated in the tentative models since it failed the autocorrelation test on the residuals. Model 4 will also be eliminated since it failed the normality test on the residuals.
+
+Compute the accuracy metrics for the training set and test set of the three remaining tentative ARIMA models:
+
+```{r}
+
+graph3=autoplot(food_ts,series="Actual Values",main="ARIMA(1,1,1)(0,1,0)[4]",size=0.25)+
+  autolayer(fitted(model1),series="Training Set",size=0.25)+
+  autolayer(forecast(model1,h=length(food_test))$mean,series="Test Set",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','red2','blue'))
+ggplotly(graph3)
+
+graph4=autoplot(food_ts,series="Actual Values",main="ARIMA(0,1,2)(0,1,0)[4]",size=0.25)+
+  autolayer(fitted(model2),series="Training Set",size=0.25)+
+  autolayer(forecast(model2,h=length(food_test))$mean,series="Test Set",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','red2','blue'))
+ggplotly(graph4)
+
+graph5=autoplot(food_ts,series="Actual Values",main="ARIMA(2,1,0)(0,1,0)[4]",size=0.25)+
+  autolayer(fitted(model5),series="Training Set",size=0.25)+
+  autolayer(forecast(model5,h=length(food_test))$mean,series="Test Set",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','red2','blue'))
+ggplotly(graph5)
+
+rbind(
+  Model1=data.frame(accuracy(forecast(model1,h=length(food_test)),food_test)),
+  Model2=data.frame(accuracy(forecast(model2,h=length(food_test)),food_test)),
+  Model5=data.frame(accuracy(forecast(model5,h=length(food_test)),food_test))
+)
+```
+
+------------------------------------------------------------------------
+
+#### Step 6: Choosing the Best Model and Making Forecast
+
+Research Question 2: What is the best ARIMA model in forecasting the Household Final Consumption Expenditure on Food?
+
+Based on the accuracy metrics the best fit ARIMA model is Model 2 with parameters **ARIMA(0,1,2)(0,1,0)[4]**
+
+Research Question 3: What are the forecasted values of the Household Final Consumption Expenditure on Food for the years 2024 to 2025?
+
+Make forecast using the best model for the next 12 quarters or in the next 3 years.
+
+```{r}
+coefs=model2$coef
+best_fit=arima(food_ts, order=c(0,1,2), seasonal=c(0,1,0),fixed=coefs)
+print(fitted(best_fit))
+arima_forecast=forecast(best_fit,h=11)
+autoplot(food_ts,series="Actual Values",main="Forecasts from ARIMA(0,1,2)(0,1,0)[4]",size=0.25)+
+  autolayer(arima_forecast,series="Forecasted Values",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','blue','darkorchid4'))
+
+print(arima_forecast)
+```
+
+## **Error-Trend-Seasonality Model**
+
+```{r}
+
+ets_train=ets(food_train,ic="bic")
+summary(ets_train)
+ETS_Model=data.frame(AIC=AIC(ets_train),BIC=BIC(ets_train))
+print(ETS_Model)
+ets_test=forecast(ets_train,h=20)
+print(ets_test)
+graph7=autoplot(food_ts,series="Actual Values",main="ETS(M,A,M)",size=0.25)+
+  autolayer(ets_train$fitted,series="Training Set",size=0.25)+
+  autolayer(ets_test$mean,series="Test Set",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','red2','blue'))
+ggplotly(graph7)
+
+data.frame(accuracy(ets_train))
+data.frame(accuracy(ets_test$mean,food_test))
+checkresiduals(ets_train)
+lillie.test(residuals(ets_train))
+
+ets=ets(food_ts)
+print(fitted(ets))
+ets_forecast=forecast(ets,h=11)
+autoplot(food_ts,series="Actual Values",main="Forecasts from ETS(M,A,M)",size=0.25)+
+  autolayer(ets_forecast,series="Forecasted Values",size=0.25)+
+  xlab("Quarter")+
+  ylab("in million Php")+
+  guides(colour=guide_legend(title=""))+
+  scale_color_manual(values=c('black','blue','darkorchid4'))
+
+print(ets_forecast)
+```
